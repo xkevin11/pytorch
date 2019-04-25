@@ -5,6 +5,7 @@
 
 namespace at {
 namespace native {
+using namespace at;
 namespace {
 inline int start_index(int a, int b, int c) {
   return (int)std::floor((float)(a * c) / b);
@@ -14,8 +15,9 @@ inline int end_index(int a, int b, int c) {
   return (int)std::ceil((float)((a + 1) * c) / b);
 }
 
-static void spatial_avg_pool2d_shapecheck(
+static void avg_pool2d_shapecheck(
     Tensor& input,
+    Tensor* output,
     IntList kernel_size,
     IntList stride_size,
     IntList pad_size,
@@ -84,10 +86,30 @@ static void spatial_avg_pool2d_shapecheck(
         nInputPlane,
         outputHeight,
         outputWidth);
+
+  if (output != NULL) {
+    AT_CHECK(
+      output->ndimension() == ndim,
+      "output.ndimensions() must be %d, got %d",
+      ndim, output->ndimension()
+    )
+    AT_CHECK(
+      output->size(dimf) == nOutputPlane,
+      "output->size(%d) must be %d, got %d",
+      dimf, nOutputPlane, output->size(dimf));
+    AT_CHECK(
+      output->size(dimh) == outputHeight,
+      "output->size(%d) must be %d, got %d",
+      dimh, outputHeight, output->size(dimh));
+    AT_CHECK(
+      output->size(dimw) == outputWidth,
+      "output->size(%d) must be %d, got %d",
+      dimw, outputWidth, output->size(dimw));
+  }
 }
 
 template <typename scalar_t>
-static void spatial_avg_pool2d_out_cpu_frame(
+static void avg_pool2d_out_cpu_frame(
     Tensor& input,
     Tensor& output,
     int64_t nInputPlane,
@@ -160,7 +182,7 @@ static void spatial_avg_pool2d_out_cpu_frame(
   }
 }
 
-static void spatial_avg_pool2d_out_cpu_template(
+static void avg_pool2d_out_cpu_template(
     Tensor& input,
     Tensor& output,
     IntList kernel_size,
@@ -186,8 +208,8 @@ static void spatial_avg_pool2d_out_cpu_template(
   int64_t outputHeight;
   int64_t nInputPlane; // number of channels (or colors)
 
-  spatial_avg_pool2d_shapecheck(
-      input, kernel_size, stride_size, pad_size, ceil_mode);
+  avg_pool2d_shapecheck(
+      input, &output, kernel_size, stride_size, pad_size, ceil_mode);
 
   if (input.dim() == 4) {
     nbatch = input.size(0);
@@ -217,8 +239,8 @@ static void spatial_avg_pool2d_out_cpu_template(
   }
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-    output.scalar_type(), "spatial_avg_pool2d", [&] {
-      spatial_avg_pool2d_out_cpu_frame<scalar_t>(
+    output.scalar_type(), "avg_pool2d", [&] {
+      avg_pool2d_out_cpu_frame<scalar_t>(
           input,
           output,
           nInputPlane,
@@ -235,7 +257,7 @@ static void spatial_avg_pool2d_out_cpu_template(
 }
 
 template <typename scalar_t>
-static void spatial_avg_pool2d_backward_cpu_frame(
+static void avg_pool2d_backward_cpu_frame(
   Tensor& gradInput,
   Tensor& gradOutput,
   int64_t nInputPlane,
@@ -309,7 +331,7 @@ static void spatial_avg_pool2d_backward_cpu_frame(
   }
 }
 
-static void spatial_avg_pool2d_backward_cpu_template(
+static void avg_pool2d_backward_cpu_template(
   Tensor& input,
   Tensor& gradOutput,
   Tensor& gradInput,
@@ -337,8 +359,8 @@ static void spatial_avg_pool2d_backward_cpu_template(
   int64_t outputHeight;
   int64_t nInputPlane; // number of channels (or colors)
 
-  spatial_avg_pool2d_shapecheck(
-      input, kernel_size, stride_size, pad_size, ceil_mode);
+  avg_pool2d_shapecheck(
+      input, &gradOutput, kernel_size, stride_size, pad_size, ceil_mode);
 
 
   if (input.dim() == 4) {
@@ -363,8 +385,8 @@ static void spatial_avg_pool2d_backward_cpu_template(
     AT_ERROR("gradInput must be contiguous");
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-    gradOutput.scalar_type(), "spatial_avg_pool2d", [&] {
-      spatial_avg_pool2d_backward_cpu_frame<scalar_t>(
+    gradOutput.scalar_type(), "avg_pool2d", [&] {
+      avg_pool2d_backward_cpu_frame<scalar_t>(
           gradInput,
           gradOutput,
           nInputPlane,
@@ -381,5 +403,39 @@ static void spatial_avg_pool2d_backward_cpu_template(
 }
 
 } // namespace
+
+Tensor& avg_pool2d_out_cpu(
+  Tensor & output,
+  Tensor & input,
+  IntList kernel_size,
+  IntList stride,
+  IntList padding,
+  bool ceil_mode,
+  bool count_include_pad)
+  {
+    avg_pool2d_out_cpu_template(
+      input, output, kernel_size, stride, padding, ceil_mode, count_include_pad);
+    return output;
+  }
+
+Tensor& avg_pool2d_cpu(
+  Tensor & input,
+  IntList kernel_size,
+  IntList stride,
+  IntList padding,
+  bool ceil_mode,
+  bool count_include_pad)
+  {
+    auto kH = kernel_size[0];
+    auto kW = kernel_size[1];
+    auto dH = stride[0];
+    auto dW = stride[1];
+    auto padH = padding[0];
+    auto padW = padding[1];
+    avg_pool2d_out_cpu_template(
+      input, output, kernel_size, stride, padding, ceil_mode, count_include_pad);
+    return output;
+  }
+
 } // namespace native
 } // namespace at
