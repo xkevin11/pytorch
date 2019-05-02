@@ -2,6 +2,7 @@
 #include "ATen/ATen.h"
 #include "ATen/NativeFunctions.h"
 #include "ATen/pooling_shape.h"
+#include "ATen/TensorUtils.h"
 
 namespace at {
 namespace native {
@@ -76,6 +77,8 @@ static void avg_pool2d_shapecheck(
   int64_t outputWidth =
       pooling_output_shape<int64_t>(inputWidth, kW, padW, dW, 1, ceil_mode);
 
+  
+
   if (outputWidth < 1 || outputHeight < 1)
     AT_ERROR(
         "Given input size: (%dx%dx%d). "
@@ -88,23 +91,15 @@ static void avg_pool2d_shapecheck(
         outputWidth);
 
   if (output != NULL) {
+    auto output_co = TensorArg(*output, "out", -1);
     AT_CHECK(
       output->ndimension() == ndim,
       "output.ndimensions() must be %d, got %d",
       ndim, output->ndimension()
     )
-    AT_CHECK(
-      output->size(dimf) == nOutputPlane,
-      "output->size(%d) must be %d, got %d",
-      dimf, nOutputPlane, output->size(dimf));
-    AT_CHECK(
-      output->size(dimh) == outputHeight,
-      "output->size(%d) must be %d, got %d",
-      dimh, outputHeight, output->size(dimh));
-    AT_CHECK(
-      output->size(dimw) == outputWidth,
-      "output->size(%d) must be %d, got %d",
-      dimw, outputWidth, output->size(dimw));
+    at::checkSize("avg_pool2d", output_co, dimf, nOutputPlane);
+    at::checkSize("avg_pool2d", output_co, dimh, outputHeight);
+    at::checkSize("avg_pool2d", output_co, dimw, outputWidth);
   }
 }
 
@@ -118,10 +113,10 @@ static void avg_pool2d_out_cpu_frame(
     int64_t outputHeight,
     int64_t outputWidth,
     int64_t nbatch,
-    bool count_include_pad,
     IntList kernel_size,
     IntList stride_size,
-    IntList pad_size) {
+    IntList pad_size,
+    bool count_include_pad) {
   auto kH = kernel_size[0];
   auto kW = kernel_size[1];
   auto dH = stride_size[0];
@@ -249,10 +244,10 @@ static void avg_pool2d_out_cpu_template(
           outputHeight,
           outputWidth,
           nbatch,
-          count_include_pad,
           kernel_size,
           stride_size,
-          pad_size);
+          pad_size,
+          count_include_pad);
     });
 }
 
@@ -380,6 +375,11 @@ static void avg_pool2d_backward_cpu_template(
 
   gradInput.resize_as_(input);
 
+  if (input.dim() == 3)
+    gradOutput.resize_({nInputPlane, outputHeight, outputWidth});
+  else
+    gradOutput.resize_({input.size(0), nInputPlane, outputHeight, outputWidth});
+
   gradOutput = gradOutput.contiguous();
   if (!gradInput.is_contiguous())
     AT_ERROR("gradInput must be contiguous");
@@ -405,37 +405,61 @@ static void avg_pool2d_backward_cpu_template(
 } // namespace
 
 Tensor& avg_pool2d_out_cpu(
-  Tensor & output,
-  Tensor & input,
+  Tensor& input,
   IntList kernel_size,
   IntList stride,
   IntList padding,
   bool ceil_mode,
-  bool count_include_pad)
+  bool count_include_pad,
+  Tensor& output)
   {
     avg_pool2d_out_cpu_template(
       input, output, kernel_size, stride, padding, ceil_mode, count_include_pad);
     return output;
   }
 
-Tensor& avg_pool2d_cpu(
-  Tensor & input,
+Tensor avg_pool2d_cpu(
+  Tensor& input,
   IntList kernel_size,
   IntList stride,
   IntList padding,
   bool ceil_mode,
   bool count_include_pad)
   {
-    auto kH = kernel_size[0];
-    auto kW = kernel_size[1];
-    auto dH = stride[0];
-    auto dW = stride[1];
-    auto padH = padding[0];
-    auto padW = padding[1];
+    auto output = empty({0}, input.options());
     avg_pool2d_out_cpu_template(
       input, output, kernel_size, stride, padding, ceil_mode, count_include_pad);
     return output;
   }
 
+  Tensor& avg_pool2d_backward_out_cpu(
+    Tensor& gradOutput,
+    Tensor& input,
+    IntList kernel_size,
+    IntList stride,
+    IntList padding,
+    bool ceil_mode,
+    bool count_include_pad,
+    Tensor& gradInput)
+  {
+    avg_pool2d_backward_cpu_template(
+      input, gradOutput, gradInput, kernel_size, stride, padding, ceil_mode, count_include_pad);
+    return gradOutput;
+  }
+
+  Tensor avg_pool2d_backward_cpu(
+    Tensor& gradOutput,
+    Tensor& input,
+    IntList kernel_size,
+    IntList stride,
+    IntList padding,
+    bool ceil_mode,
+    bool count_include_pad)
+  {
+    auto gradInput = at::zeros_like(input);
+    avg_pool2d_backward_cpu_template(
+      input, gradOutput, gradInput, kernel_size, stride, padding, ceil_mode, count_include_pad);
+    return gradOutput;
+  }
 } // namespace native
 } // namespace at
