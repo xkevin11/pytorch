@@ -329,24 +329,71 @@ struct TORCH_API Module {
     return nullptr;
   }
 
+  void validateGetSetStateSchema() const {
+    // Check that the schemas for __getstate__ and __setstate__ are correct
+    //   __getstate__ is expected to be (self) -> T
+    //   __setstate__ is expected to be (self, T) -> None
+
+    auto get_schema =
+        module_object()->type()->getMethod("__getstate__")->getSchema();
+
+    // Check __getstate__
+    AT_CHECK(
+        get_schema.arguments().size() == 1,
+        "'__getstate__' must have 'self' as its only argument, but found ",
+        get_schema.arguments().size(),
+        " arguments");
+    AT_CHECK(
+        get_schema.returns().size() == 1,
+        "'__getstate__' must return 1 value, but found ",
+        get_schema.returns().size());
+
+    // Check __setstate__ if the method exists
+    auto getstate = module_object()->type()->getMethod("__setstate__");
+    if (getstate == nullptr) {
+      return;
+    }
+    auto set_schema = getstate->getSchema();
+
+    AT_CHECK(
+        set_schema.arguments().size() == 2,
+        "'__setstate__' must have 'self' and the state as its "
+        "only arguments, but found ",
+        set_schema.arguments().size(),
+        " arguments");
+    AT_CHECK(
+        set_schema.returns().size() == 1,
+        "'__setstate__' must return None, but found ",
+        set_schema.returns().size(),
+        " return values");
+    AT_CHECK(
+        set_schema.returns().at(0).type()->isSubtypeOf(NoneType::get()),
+        "'__setstate__' must return None, but found value of type",
+        set_schema.returns().at(0).type()->python_str());
+
+    // Check that the return type of __getstate__ matches the input to
+    // __setstate__
+    if (auto getstate = module_object()->type()->getMethod("__getstate__")) {
+      auto get_type = get_schema.returns().at(0).type();
+      auto set_type = set_schema.arguments().at(1).type();
+
+      AT_CHECK(
+          set_type->isSubtypeOf(get_type),
+          "'__getstate__'s return type (",
+          get_type->python_str(),
+          " does not match '__setstate__'s argument type (",
+          set_type->python_str(),
+          "))");
+    }
+  }
+
   IValue getstate() const {
     if (find_method("__getstate__") == nullptr) {
-      std::cout << "getsatte NOT FOUND\n";
       return IValue();
     }
     auto getstate = module_object()->type()->getMethod("__getstate__");
-    auto schema = getstate->getSchema();
 
-    // Validate schema
-    AT_CHECK(
-        schema.arguments().size() == 1,
-        "'__getstate__' must have 'self' as its only argument, but found ",
-        schema.arguments().size(),
-        " arguments");
-    AT_CHECK(
-        schema.returns().size() == 1,
-        "'__getstate__' must return 1 value, but found ",
-        schema.returns().size());
+    validateGetSetStateSchema();
 
     Stack stack;
     stack.emplace_back(module_object());
@@ -359,36 +406,7 @@ struct TORCH_API Module {
     if (setstate == nullptr) {
       return;
     }
-    auto schema = setstate->getSchema();
-
-    // Validate schema
-    AT_CHECK(
-        schema.arguments().size() == 2,
-        "'__setstate__' must have 'self' and the state as its "
-        "only arguments, but found ",
-        schema.arguments().size(),
-        " arguments");
-    AT_CHECK(
-        schema.returns().size() == 1,
-        "'__setstate__' must return None, but found ",
-        schema.returns().size(), " return values");
-    AT_CHECK(
-        schema.returns().at(0).type()->isSubtypeOf(NoneType::get()),
-        "'__setstate__' must return None, but found value of type",
-        schema.returns().at(0).type()->python_str());
-
-    if (auto getstate = module_object()->type()->getMethod("__getstate__")) {
-      auto get_type = getstate->getSchema().returns().at(0).type();
-      auto set_type = setstate->getSchema().arguments().at(1).type();
-
-      AT_CHECK(
-          set_type->isSubtypeOf(get_type),
-          "'__getstate__'s return type (",
-          get_type->python_str(),
-          " does not match '__setstate__'s argument type (",
-          set_type->python_str(),
-          "))");
-    }
+    validateGetSetStateSchema();
 
     Stack stack;
     stack.emplace_back(module_object());
