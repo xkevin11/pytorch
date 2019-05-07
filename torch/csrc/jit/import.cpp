@@ -294,7 +294,6 @@ void ScriptModuleDeserializer::convertModule(
         typeParser.parseType(attr_def.type()),
         attribute_table_.at(attr_def.id()));
   }
-
   if (module_def.has_torchscript_arena()) {
     at::DataPtr data;
     size_t size;
@@ -303,10 +302,7 @@ void ScriptModuleDeserializer::convertModule(
     std::string data_str(static_cast<const char*>(data.get()), size);
 
     std::function<void(const std::string&)> import_callback =
-        [this](const std::string& qualifier) {
-          std::cout << "CB: " << qualifier << "\n";
-          importCallback(qualifier);
-        };
+        [this](const std::string& qualifier) { importCallback(qualifier); };
     script::import_methods(module, data_str, tensor_table_, import_callback);
   }
 
