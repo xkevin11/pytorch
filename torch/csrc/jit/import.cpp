@@ -58,8 +58,7 @@ class ScriptModuleDeserializer final {
   void convertModule(const torch::ModuleDef& module_def);
 
   void loadTensorTable(torch::ModelDef* model_def);
-  void loadAttributeTable();
-  void loadStateTable();
+  std::vector<IValue> loadPickleArchive(const std::string& name);
   void importCallback(const std::string& qualifier);
 
   caffe2::serialize::PyTorchStreamReader reader_;
@@ -140,10 +139,10 @@ void ScriptModuleDeserializer::deserialize(
 
   loadTensorTable(&model_def);
   if (model_def.proto_version() >= 2) {
-    loadAttributeTable();
+    attribute_table_ = loadPickleArchive("states.pkl");
   }
   if (model_def.proto_version() >= 3) {
-    loadStateTable();
+    state_table_ = loadPickleArchive("states.pkl");
   }
 
   // TODO: this can be simplified when C++/Python interop lands,
@@ -158,21 +157,13 @@ void ScriptModuleDeserializer::loadTensorTable(torch::ModelDef* model_def) {
   }
 }
 
-void ScriptModuleDeserializer::loadAttributeTable() {
+std::vector<IValue> ScriptModuleDeserializer::loadPickleArchive(const std::string& name) {
   at::DataPtr attributes_ptr;
   size_t attributes_size;
   std::tie(attributes_ptr, attributes_size) =
-      reader_.getRecord("attributes.pkl");
+      reader_.getRecord(name);
   Unpickler unpickler(attributes_ptr.get(), attributes_size, &tensor_table_);
-  attribute_table_ = unpickler.parse_ivalue_list();
-}
-
-void ScriptModuleDeserializer::loadStateTable() {
-  at::DataPtr attributes_ptr;
-  size_t attributes_size;
-  std::tie(attributes_ptr, attributes_size) = reader_.getRecord("states.pkl");
-  Unpickler unpickler(attributes_ptr.get(), attributes_size, &tensor_table_);
-  state_table_ = unpickler.parse_ivalue_list();
+  return unpickler.parse_ivalue_list();
 }
 
 at::Tensor ScriptModuleDeserializer::loadTensor(
