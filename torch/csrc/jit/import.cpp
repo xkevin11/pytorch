@@ -311,9 +311,9 @@ void ScriptModuleDeserializer::convertModule(
     script::import_methods(module, data_str, tensor_table_, import_callback);
   }
 
+  // TODO: get the correct index so this works for submodules
   size_t module_num = 0;
   module->setstate(state_table_.at(module_num));
-
 }
 
 } // namespace

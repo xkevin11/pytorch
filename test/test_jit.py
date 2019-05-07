@@ -11414,6 +11414,29 @@ a")
         s = u'\u00a3'.encode('utf8')[:1]
         self.checkScript(index_str_to_tensor, (s,))
 
+    def test_get_set_state(self):
+        class M(torch.jit.ScriptModule):
+            def __init__(self):
+                super(M, self).__init__()
+                self.register_buffer('buffer', torch.ones(2, 2))
+
+            @torch.jit.script_method
+            def __getstate__(self):
+                # type: () -> Tuple[int, int, int]
+                return (1, 2, 3)
+
+            @torch.jit.script_method
+            def __setstate__(self, state):
+                # type: (Tuple[int, int, int]) -> None
+                self.buffer += state[2]
+
+        m = M()
+        filename = "test.pkl"
+        m.save(filename)
+        self.assertEqual(m.buffer, torch.ones(2, 2))
+        loaded = torch.jit.load(filename)
+        self.assertEqual(loaded.buffer, torch.ones(2, 2) + 3)
+
     def test_string_slicing(self):
         def fn1(x):
             # type: (str) -> str

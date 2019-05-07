@@ -331,11 +331,23 @@ struct TORCH_API Module {
 
   IValue getstate() const {
     if (find_method("__getstate__") == nullptr) {
+      std::cout << "getsatte NOT FOUND\n";
       return IValue();
     }
     auto getstate = module_object()->type()->getMethod("__getstate__");
     auto schema = getstate->getSchema();
-    // AT_CHECK(schema.arguments().size())
+    std::cout << "GET: " << schema << "\n";
+
+    // Validate schema
+    AT_CHECK(
+        schema.arguments().size() == 1,
+        "'__getstate__' must have 'self' as its only argument, but found ",
+        schema.arguments().size(),
+        " arguments");
+    AT_CHECK(
+        schema.returns().size() == 1,
+        "'__getstate__' must return 1 value, but found ",
+        schema.returns().size());
 
     Stack stack;
     stack.emplace_back(module_object());
@@ -345,7 +357,40 @@ struct TORCH_API Module {
 
   void setstate(IValue state) {
     auto setstate = module_object()->type()->getMethod("__setstate__");
+    if (setstate == nullptr) {
+      return;
+    }
     auto schema = setstate->getSchema();
+    std::cout << "SET: " << schema << "\n";
+
+    // Validate schema
+    AT_CHECK(
+        schema.arguments().size() == 2,
+        "'__setstate__' must have 'self' and the state as its "
+        "only arguments, but found ",
+        schema.arguments().size(),
+        " arguments");
+    AT_CHECK(
+        schema.returns().size() == 1,
+        "'__setstate__' must return None, but found ",
+        schema.returns().size(), " return values");
+    AT_CHECK(
+        schema.returns().at(0).type()->isSubtypeOf(NoneType::get()),
+        "'__setstate__' must return None, but found value of type",
+        schema.returns().at(0).type()->python_str());
+
+    if (auto getstate = module_object()->type()->getMethod("__getstate__")) {
+      auto get_type = getstate->getSchema().returns().at(0).type();
+      auto set_type = setstate->getSchema().arguments().at(1).type();
+
+      AT_CHECK(
+          set_type->isSubtypeOf(get_type),
+          "'__getstate__'s return type (",
+          get_type->python_str(),
+          " does not match '__setstate__'s argument type (",
+          set_type->python_str(),
+          "))");
+    }
 
     Stack stack;
     stack.emplace_back(module_object());
