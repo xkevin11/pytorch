@@ -12,6 +12,13 @@
 
 #include <ATen/core/Tensor.h>
 
+namespace torch {
+namespace jit {
+namespace script {
+struct Function;
+}
+} // namespace jit
+} // namespace torch
 namespace c10 {
 struct IValue;
 struct ClassType;
@@ -493,6 +500,10 @@ struct CAFFE2_API IValue final {
   // this is a shallow comparison of two IValues to test the object identity
   bool isSameIdentity(IValue& rhs);
 
+  bool isSameType(const IValue& other) const {
+    return this->tag == other.tag;
+  }
+
   CAFFE2_API friend std::ostream& operator<<(
       std::ostream& out,
       const IValue& v);
@@ -695,6 +706,14 @@ struct C10_EXPORT ivalue::Object final : c10::intrusive_ptr_target {
     return c10::make_intrusive<Object>(std::move(type), numSlots);
   }
 
+  /**
+   * Slot API.
+   *
+   * Attributes are stored as a simple vector so that lookups are fast at
+   * runtime. A "slot" is just an index into that vector, which can be computed
+   * statically if you have access to the class type. Use this API if you are
+   * writing compiler stuff.
+   */
   void setSlot(size_t slot, IValue v) {
     if (slot >= slots_.size()) {
       // for module types, it is possible that the members of the class have
@@ -723,6 +742,25 @@ struct C10_EXPORT ivalue::Object final : c10::intrusive_ptr_target {
   std::shared_ptr<ClassType> type_;
   std::vector<IValue> slots_;
 };
+
+/**
+ * Attribute API for Objects.
+ *
+ * Wrappers around the slot stuff so that users can access attributes
+ * directly, modeled after the Python builtins. Use if you are not a
+ * compiler.
+ *
+ * Note: Unlike in Python, TorchScript must make a distinction between
+ * attributes (which are IValues) and methods (which are Methods). If you
+ * want a method, use `obj.type()->getMethod()`
+ */
+IValue getattr(
+    c10::intrusive_ptr<const ivalue::Object> obj,
+    const std::string& name);
+void setattr(
+    c10::intrusive_ptr<ivalue::Object> obj,
+    const std::string& name,
+    IValue v);
 
 struct C10_EXPORT ivalue::GenericDict : c10::intrusive_ptr_target {
  private:
