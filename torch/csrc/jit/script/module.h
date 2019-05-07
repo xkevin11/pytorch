@@ -336,7 +336,6 @@ struct TORCH_API Module {
     }
     auto getstate = module_object()->type()->getMethod("__getstate__");
     auto schema = getstate->getSchema();
-    std::cout << "GET: " << schema << "\n";
 
     // Validate schema
     AT_CHECK(
@@ -361,7 +360,6 @@ struct TORCH_API Module {
       return;
     }
     auto schema = setstate->getSchema();
-    std::cout << "SET: " << schema << "\n";
 
     // Validate schema
     AT_CHECK(

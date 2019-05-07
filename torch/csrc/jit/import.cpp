@@ -141,6 +141,8 @@ void ScriptModuleDeserializer::deserialize(
   loadTensorTable(&model_def);
   if (model_def.proto_version() >= 2) {
     loadAttributeTable();
+  }
+  if (model_def.proto_version() >= 3) {
     loadStateTable();
   }
 
@@ -168,14 +170,9 @@ void ScriptModuleDeserializer::loadAttributeTable() {
 void ScriptModuleDeserializer::loadStateTable() {
   at::DataPtr attributes_ptr;
   size_t attributes_size;
-  std::tie(attributes_ptr, attributes_size) =
-      reader_.getRecord("states.pkl");
+  std::tie(attributes_ptr, attributes_size) = reader_.getRecord("states.pkl");
   Unpickler unpickler(attributes_ptr.get(), attributes_size, &tensor_table_);
   state_table_ = unpickler.parse_ivalue_list();
-  std::cout << "Loaded state table_ " << state_table_.size() << "\n";
-  for (auto i : state_table_) {
-    std::cout << "\t" << i << "\n";
-  }
 }
 
 at::Tensor ScriptModuleDeserializer::loadTensor(
@@ -306,13 +303,18 @@ void ScriptModuleDeserializer::convertModule(
     std::string data_str(static_cast<const char*>(data.get()), size);
 
     std::function<void(const std::string&)> import_callback =
-        [this](const std::string& qualifier) { importCallback(qualifier); };
+        [this](const std::string& qualifier) {
+          std::cout << "CB: " << qualifier << "\n";
+          importCallback(qualifier);
+        };
     script::import_methods(module, data_str, tensor_table_, import_callback);
   }
 
   // TODO: get the correct index so this works for submodules
   size_t module_num = 0;
-  module->setstate(state_table_.at(module_num));
+  if (module_num <= state_table_.size()) {
+    module->setstate(state_table_.at(module_num));
+  }
 }
 
 } // namespace
